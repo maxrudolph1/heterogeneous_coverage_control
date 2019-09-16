@@ -10,9 +10,9 @@ iterations = 2000;
 
 %% Set up the Robotarium object
 
-N = 4;
-K = 4;
-x_init = generate_initial_conditions(N+K,'Width',1.1,'Height',1.1,'Spacing', 0.35);
+N = 2;
+K = 2;
+x_init = generate_initial_conditions(N+K); %,'Width',1.1,'Height',1.1,'Spacing', 0.35);
 x_init = x_init - [min(x_init(1,:)) - (-1.6 + 0.2);min(x_init(2,:)) - (-1 + 0.2);0];
 
 r = Robotarium('NumberOfRobots', N+K, 'ShowFigure', true,'InitialConditions',x_init);
@@ -138,9 +138,10 @@ for t = 1:iterations
     xid = uni_to_si_states(x);
     
     %% Algorithm
+    
     [Px, Py] = lloydsAlgorithmWeighted(x(1,:)',x(2,:)',xd(1,:)',xd(2,:)', crs, verCellHandle, 100, center, sigma, detSigma, true);
     dxir = motion_controller(x(1:2, :), [Px';Py']);
-    
+   
     [Pxd, Pyd] = lloydsAlgorithm(xd(1,:)',xd(2,:)', crs, verCellHandleD, true);
     dxid = motion_controller(xd(1:2, :), [Pxd';Pyd']);
     

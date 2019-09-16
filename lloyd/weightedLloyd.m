@@ -4,13 +4,13 @@
 % 07/2019
 
 %% Experiment Constants
-
+close all;
 %Run the simulation for a specific number of iterations
 iterations = 2000;
 
 %% Set up the Robotarium object
 
-N = 7;
+N = 2;
 x_init = generate_initial_conditions(N,'Width',1.1,'Height',1.1,'Spacing', 0.35);
 x_init = x_init - [min(x_init(1,:)) - (-1.6 + 0.2);min(x_init(2,:)) - (-1 + 0.2);0];
 r = Robotarium('NumberOfRobots', N, 'ShowFigure', true,'InitialConditions',x_init);
@@ -35,7 +35,7 @@ crs = [r.boundaries(1), r.boundaries(3);
    
 %Gausian Setup
 center = [0;0];
-sigma = 0.1*eye(2);
+sigma = 0.4*eye(2);
 detSigma = det(sigma);
 %% Grab tools we need to convert from single-integrator to unicycle dynamics
 
@@ -93,9 +93,10 @@ for t = 1:iterations
     xi = uni_to_si_states(x);
     
     %% Algorithm
+    
     [Px, Py] = lloydsAlgorithm(x(1,:)',x(2,:)', crs, verCellHandle, 100, center, sigma, detSigma);
     dxi = motion_controller(x(1:2, :), [Px';Py']);
-         
+       
     %% Avoid actuator errors
     
     % To avoid errors, we need to threshold dxi
@@ -201,26 +202,27 @@ function [Px, Py] = lloydsAlgorithm(Px,Py, crs, verCellHandle, res, center, sigm
     for i = 1:numel(c) %calculate the center of mass of each cell
         xVoronoi = linspace(min(v(c{i},1)),max(v(c{i},1)),res);
         yVoronoi = linspace(min(v(c{i},2)),max(v(c{i},2)),res);
-        in = inpolygon(xVoronoi,yVoronoi,v(c{i},1),v(c{i},2));
-        xArrayIn = xVoronoi(in)';
-        yArrayIn = yVoronoi(in)';
+        coords = [];
+    
+        for a = 1:numel(yVoronoi)
+            coords = [coords; [xVoronoi' yVoronoi(a)*ones(numel(xVoronoi),1)]];
+        end
+        in = inpolygon(coords(:, 1),coords(:, 2),v(c{i},1),v(c{i},2));
+        xArrayIn = coords(in, 1)';
+        yArrayIn = coords(in, 2)';
         positionMassSumX = 0;
         positionMassSumY = 0;
         totalMass = 0;
-        hold on;
-        figure(2)
-        plot(v(c{i}, 1), v(c{i}, 2), '-r')
-        length(xArrayIn)
-        length(yArrayIn)
+
         for j = 1:length(xArrayIn)
-            for k = 1:length(yArrayIn)
-                zArrayIn = gaussC(xArrayIn(j),yArrayIn(k), sigma, detSigma, center);
+
+                zArrayIn = gaussC(xArrayIn(j),yArrayIn(j), sigma, detSigma, center);
                 positionMassSumX = positionMassSumX + zArrayIn*xArrayIn(j);
-                positionMassSumY = positionMassSumY + zArrayIn*yArrayIn(k);
+                positionMassSumY = positionMassSumY + zArrayIn*yArrayIn(j);
                 totalMass = totalMass + zArrayIn;
-            end
-           
         end
+        
+          
         positionMassSumX = positionMassSumX/(totalMass);
         positionMassSumY = positionMassSumY/(totalMass);
         cx = positionMassSumX;
