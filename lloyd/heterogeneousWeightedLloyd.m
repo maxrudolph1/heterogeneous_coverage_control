@@ -10,7 +10,7 @@ iterations = 2000;
 
 %% Set up the Robotarium object
 
-N = 2;
+N = 10;
 K = 2;
 x_init = generate_initial_conditions(N+K); %,'Width',1.1,'Height',1.1,'Spacing', 0.35);
 x_init = x_init - [min(x_init(1,:)) - (-1.6 + 0.2);min(x_init(2,:)) - (-1 + 0.2);0];
@@ -120,7 +120,8 @@ end
 xArrayD = linspace(r.boundaries(1),r.boundaries(2),plotRes);
 yArrayD = linspace(r.boundaries(3),r.boundaries(4),plotRes);
 zArrayD = ones(plotRes);
-
+titl = sprintf('Heterogeneous Weight Lloyd with %d aerial and %d ground bots', K, N);
+title(titl)
 r.step();
 
 %% Main Loop
@@ -277,10 +278,10 @@ yrange = max(crs(:,2)) - min(crs(:,2));
 [vd cd] = VoronoiBounded(Pxd, Pyd, crs);
 
 
-
+coveredArea = [];
 
 for i = 1:numel(c) %calculate the center of mass of each cell
-
+    
 
     xVoronoi = linspace(min(v(c{i},1)),max(v(c{i},1)),res);  %linspace(min(v(c{i},1)),max(v(c{i},1)),res);
     yVoronoi = linspace(min(v(c{i},2)),max(v(c{i},2)),res);  %linspace(min(v(c{i},2)),max(v(c{i},2)),res);
@@ -327,6 +328,31 @@ for i = 1:numel(c) %calculate the center of mass of each cell
             positionMassSumY = positionMassSumY + zArrayIn*yArrayIn(j);
             totalMass = totalMass + zArrayIn;
     end
+    h = figure(2);
+    
+    coveredArea = [coveredArea, {[xArrayIn' yArrayIn']}];
+    if i == numel(c)
+        plot(coveredArea{1}(:, 1), coveredArea{1}(:, 2), '.k', coveredArea{2}(:,1), coveredArea{2}(:,2), '.g',coveredArea{3}(:,1), coveredArea{3}(:,2), '.r' )
+        axis([-1.6 1.6 -1 1])
+    end
+%     if i == 1
+%         h1 = plot(xArrayIn, yArrayIn, '.k')
+% 
+%         axis([-1.6 1.6 -1 1])
+%         pause(.01)
+%         
+%     elseif i == 2
+%         h2 = plot(xArrayIn, yArrayIn, '.b')
+% 
+%         axis([-1.6 1.6 -1 1])
+%         pause(.01)
+%  
+%     elseif i == 3
+%         %h3 = plot(xArrayIn, yArrayIn, '.r')
+%         %pause(.01)
+%         clf(h)
+%     end
+    
     
     
     positionMassSumX = positionMassSumX/(totalMass);

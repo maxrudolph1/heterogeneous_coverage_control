@@ -34,7 +34,7 @@ crs = [r.boundaries(1), r.boundaries(3);
 %        r.boundaries(2), r.boundaries(3)];
    
 %Gausian Setup
-center = [0;0];
+center = [1;0];
 sigma = 0.4*eye(2);
 detSigma = det(sigma);
 %% Grab tools we need to convert from single-integrator to unicycle dynamics
