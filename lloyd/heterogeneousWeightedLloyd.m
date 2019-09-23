@@ -235,6 +235,145 @@ end
 
 %% Lloyds algorithm put together by Aaron Becker
 
+function [Px, Py] = lloydsAlgorithmWeightedVoronoi(Pxg, Pyg, Pxa, Pya, res, center, sigma, detSigma, plt)
+% LLOYDSALGORITHM runs Lloyd's algorithm on the particles at xy positions
+% (Px,Py) within the boundary polygon crs for numIterations iterations
+% showPlot = true will display the results graphically.
+%
+% Lloyd's algorithm starts with an initial distribution of samples or
+% points and consists of repeatedly executing one relaxation step:
+%   1.  The Voronoi diagram of all the points is computed.
+%   2.  Each cell of the Voronoi diagram is integrated and the centroid is computed.
+%   3.  Each point is then moved to the centroid of its Voronoi cell.
+%
+% Inspired by http://www.mathworks.com/matlabcentral/fileexchange/34428-voronoilimit
+% Requires the Polybool function of the mapping toolbox to run.
+%
+% Run with no input to see example.  To initialize a square with 50 robots
+% in left middle, run:
+%lloydsAlgorithm(0.01*rand(50,1),zeros(50,1)+1/2, [0,0;0,1;1,1;1,0], 200, true)
+%
+% Made by: Aaron Becker, atbecker@uh.edu
+format compact
+
+% initialize random generator in repeatable fashion
+sd = 20;
+rng(sd)
+
+%         crs = [ 0, 0;
+%             0, yrange;
+%             1/3*xrange, yrange;  % a world with a narrow passage
+%             1/3*xrange, 1/4*yrange;
+%             2/3*xrange, 1/4*yrange;
+%             2/3*xrange, yrange;
+%             xrange, yrange;
+%             xrange, 0];
+
+xrange = max(crs(:,1)) - min(crs(:,1));
+yrange = max(crs(:,2)) - min(crs(:,2));
+
+% Apply LLYOD's Algorithm
+[v,c]=VoronoiBounded(Px,Py,crs);
+
+[vd cd] = VoronoiBounded(Pxd, Pyd, crs);
+
+
+coveredArea = [];
+
+for i = 1:numel(c) %calculate the center of mass of each cell
+    
+
+    xVoronoi = linspace(min(v(c{i},1)),max(v(c{i},1)),res);  %linspace(min(v(c{i},1)),max(v(c{i},1)),res);
+    yVoronoi = linspace(min(v(c{i},2)),max(v(c{i},2)),res);  %linspace(min(v(c{i},2)),max(v(c{i},2)),res);
+    
+    whichDrone = 0;
+    for l = 1:numel(cd)
+        if inpolygon(Px(i), Py(i), vd(cd{l}, 1), vd(cd{l}, 2))
+            whichDrone = l;
+        end
+        
+    end
+    
+    if whichDrone == 0
+        Px(i) = Px(i) + .01;
+        Py(i) = Py(i) + .01;
+        for l = 1:numel(cd)
+            if inpolygon(Px(i), Py(i), vd(cd{l}, 1), vd(cd{l}, 2))
+                whichDrone = l;
+                
+            end
+            
+        end
+    end
+    coords = [];
+    
+    for a = 1:numel(yVoronoi)
+        coords = [coords; [xVoronoi' yVoronoi(a)*ones(numel(xVoronoi),1)]];
+    end
+    
+   
+    in1 = inpolygon(coords(:,1),coords(:,2),v(c{i},1),v(c{i},2));
+    in2 = inpolygon(coords(:,1),coords(:,2),vd(cd{whichDrone},1),vd(cd{whichDrone},2));
+   
+    
+    xArrayIn = coords(in1 & in2, 1)';
+    yArrayIn = coords(in1 & in2, 2)';
+    positionMassSumX = 0;
+    positionMassSumY = 0;
+    totalMass = 0;
+
+    for j = 1:length(xArrayIn)
+            zArrayIn = gaussC(xArrayIn(j),yArrayIn(j), sigma, detSigma, center);
+            positionMassSumX = positionMassSumX + zArrayIn*xArrayIn(j);
+            positionMassSumY = positionMassSumY + zArrayIn*yArrayIn(j);
+            totalMass = totalMass + zArrayIn;
+    end
+    h = figure(2);
+    
+    coveredArea = [coveredArea, {[xArrayIn' yArrayIn']}];
+    if i == numel(c)
+        plot(coveredArea{1}(:, 1), coveredArea{1}(:, 2), '.k', coveredArea{2}(:,1), coveredArea{2}(:,2), '.g',coveredArea{3}(:,1), coveredArea{3}(:,2), '.r' )
+        axis([-1.6 1.6 -1 1])
+    end
+%     if i == 1
+%         h1 = plot(xArrayIn, yArrayIn, '.k')
+% 
+%         axis([-1.6 1.6 -1 1])
+%         pause(.01)
+%         
+%     elseif i == 2
+%         h2 = plot(xArrayIn, yArrayIn, '.b')
+% 
+%         axis([-1.6 1.6 -1 1])
+%         pause(.01)
+%  
+%     elseif i == 3
+%         %h3 = plot(xArrayIn, yArrayIn, '.r')
+%         %pause(.01)
+%         clf(h)
+%     end
+    
+    
+    
+    positionMassSumX = positionMassSumX/(totalMass);
+    positionMassSumY = positionMassSumY/(totalMass);
+    cx = positionMassSumX;
+    cy = positionMassSumY;
+    cx = min(max(crs(:,1)),max(min(crs(:,1)), cx));
+    cy = min(max(crs(:,2)),max(min(crs(:,2)), cy));
+    if ~isnan(cx) && inpolygon(cx,cy,crs(:,1),crs(:,2))
+        Px(i) = cx;  %don't update if goal is outside the area
+        Py(i) = cy;
+    end
+end
+if plt
+    for i = 1:numel(c) % update Voronoi cells
+        set(verCellHandle(i), 'XData',v(c{i},1),'YData',v(c{i},2));
+    end
+end
+
+end
+
 function [Px, Py] = lloydsAlgorithmWeighted(Px,Py,Pxd, Pyd, crs, verCellHandle, res, center, sigma, detSigma, plt)
 % LLOYDSALGORITHM runs Lloyd's algorithm on the particles at xy positions
 % (Px,Py) within the boundary polygon crs for numIterations iterations
