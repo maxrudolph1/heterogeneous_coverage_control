@@ -10,8 +10,8 @@ iterations = 2000;
 
 %% Set up the Robotarium object
 
-N = 10;
-K = 2;
+N = 3;
+K = 3;
 x_init = generate_initial_conditions(N+K); %,'Width',1.1,'Height',1.1,'Spacing', 0.35);
 x_init = x_init - [min(x_init(1,:)) - (-1.6 + 0.2);min(x_init(2,:)) - (-1 + 0.2);0];
 
