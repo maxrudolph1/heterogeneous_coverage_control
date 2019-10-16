@@ -66,8 +66,8 @@ function [V, CE] = powerDiagram2(E, wts)
     %%%%%%%%%%%%%%%%%%%% assign each point to the vertices %%%%%%%%%%%%%%%%%%%%
     % CE = arrayfun(@(x) mod(find(C == x)'-1, size(C,1)) + 1, [1:size(E,1)], 'UniformOutput', 0);
     CE = cell(size(E,1),1);
-    for (col = [1:size(C,2)])
-        for (row = [1:size(C,1)])
+    for (col = 1:size(C,2))
+        for (row = 1:size(C,1))
             i = C(row,col);
             CE{i} = [CE{i}, row+1]; % + 1 because there is Inf at the first row
         end

@@ -385,21 +385,14 @@ end
 
 alpha = 1/sum(avgDensity);
 
-weights = (avgDensity*alpha)./(numBots + 1).^3;
+weights = (avgDensity*alpha)./(numBots + 1).^2
 % weights = totalMass./exp(numBots);
 % avgDensity
 % totalMass./totalArea
 % weights = ones(1, 5);
 
-% weights = totalMass./(numBots+1);
-% 
-% mask = (numBots == 0);
-% 
-% weights(mask) = 1;
-% 
-% weights = weights - 1;
+weights = numBots/
 
-weights
 [vd cd] = power_bounded(Pxd, Pyd, weights', crs);
 coveredArea = [];
 for i = 1:numel(c) %calculate the center of mass of each cell

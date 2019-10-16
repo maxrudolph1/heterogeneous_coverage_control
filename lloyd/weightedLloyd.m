@@ -10,7 +10,7 @@ iterations = 2000;
 
 %% Set up the Robotarium object
 
-N = 2;
+N = 7;
 x_init = generate_initial_conditions(N,'Width',1.1,'Height',1.1,'Spacing', 0.35);
 x_init = x_init - [min(x_init(1,:)) - (-1.6 + 0.2);min(x_init(2,:)) - (-1 + 0.2);0];
 r = Robotarium('NumberOfRobots', N, 'ShowFigure', true,'InitialConditions',x_init);
@@ -203,10 +203,10 @@ function [Px, Py] = lloydsAlgorithm(Px,Py, crs, verCellHandle, res, center, sigm
         xVoronoi = linspace(min(v(c{i},1)),max(v(c{i},1)),res);
         yVoronoi = linspace(min(v(c{i},2)),max(v(c{i},2)),res);
         coords = [];
-    
-        for a = 1:numel(yVoronoi)
-            coords = [coords; [xVoronoi' yVoronoi(a)*ones(numel(xVoronoi),1)]];
-        end
+
+        [X Y] = meshgrid(xVoronoi, yVoronoi);
+        coords = [X(:) Y(:)];
+        
         in = inpolygon(coords(:, 1),coords(:, 2),v(c{i},1),v(c{i},2));
         xArrayIn = coords(in, 1)';
         yArrayIn = coords(in, 2)';
