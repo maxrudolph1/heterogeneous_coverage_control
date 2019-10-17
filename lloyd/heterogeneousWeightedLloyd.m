@@ -14,8 +14,8 @@ iterations = 2000;
 
 %% Set up the Robotarium object
 
-N = 20;
-K = 4;
+N = 2;
+K = 2;
 x_init = generate_initial_conditions(N); %,'Width',1.1,'Height',1.1,'Spacing', 0.35);
 x_init = x_init - [min(x_init(1,:)) - (-1.6 + 0.2);min(x_init(2,:)) - (-1 + 0.2);0];
 
@@ -49,6 +49,9 @@ initial_drone_pose(3, :) = initial_drone_pose(3, :)*2*pi - pi;
 center = [1;0];
 sigma = .2*eye(2);
 detSigma = det(sigma);
+
+sigmaR = .2*eye(2);
+detSigmaR = det(sigmaR);
 %% Grab tools we need to convert from single-integrator to unicycle dynamics
 
 % Single-integrator -> unicycle dynamics mapping
@@ -58,7 +61,7 @@ si_to_uni_dyn = create_si_to_uni_dynamics();
 uni_barrier_cert_boundary = create_uni_barrier_certificate_with_boundary();
 si_barrier_cert_boundary = create_si_barrier_certificate();
 % Single-integrator position controller
-motion_controller = create_si_position_controller('XVelocityGain', 8, 'YVelocityGain', 8, 'VelocityMagnitudeLimit', 10);
+motion_controller = create_si_position_controller('XVelocityGain', .8, 'YVelocityGain', .8, 'VelocityMagnitudeLimit', 1);
 drone_motion_controller = create_si_position_controller('XVelocityGain', 10, 'YVelocityGain', 10, 'VelocityMagnitudeLimit', 10);
 
 %% Plotting Setup
@@ -111,7 +114,8 @@ potentialHandle = contour(xArray,yArray,zArray', 'LineWidth',1, 'LevelStep',0.1,
 
 
 for i = 1:K % color according to drone
-    verCellHandleAerial(i)  = patch(xd(1,i),xd(2,i),cellColorsD(i,:),'FaceAlpha', 0.01, 'LineWidth', 4); % use color i  -- no robot assigned yet
+    verCellHandleAerial(i)  = patch(xd(1,i),xd(2,i),cellColorsD(i,:),'FaceAlpha', 0.01, 'LineWidth', 4);
+    % use color i  -- no robot assigned yet
     %verCellHandleD(i)  = patch(xd(1,i),xd(2,i),'EdgeColor','green','FaceColor','none','LineWidth',2);
     hold on
 end
@@ -152,40 +156,6 @@ q = 1;
 [v,c]=VoronoiBounded(xd(1, :)', xd(2, :)',crs);
 
 
-
-% while ~inPosition
-%     
-%     
-%     
-%     subplot(3,3,q);
-%     [Pxd, Pyd] = lloydsAlgorithmDrone(xd(1,:)',xd(2,:)', crs, verCellHandleAerial, 100, center, sigma, detSigma, true, weights);
-%     
-%     displac = xd-[Pxd';Pyd'];
-%     dist = sum(sum(displac.^2));
-%     if dist < 1e-5
-%         inPosition = true;
-%     else
-%         
-%         plot(Pxd, Pyd, '.r', 'MarkerSize', 30);
-%         axis([-1.6 1.6 -1 1])
-%         xd = [Pxd'; Pyd'];
-%         colors = cool(numel(cd));
-%         [vd cd] = power_bounded(Pxd, Pyd, weights, crs);
-%         hold on;
-%         for i = 1:numel(cd)
-%             if numel(cd{i}) > 0
-%                 patch(vd(cd{i}, 1), vd(cd{i}, 2),colors(i,:),'FaceAlpha', 0.3);
-%             end
-%         end
-%         pause(1)
-%         
-%         
-%     end
-%     q = q + 1;
-%     
-% end
-
-
 %%
 
 for t = 1:iterations
@@ -195,20 +165,17 @@ for t = 1:iterations
     poses = r.get_poses();
     x = poses(:, 1:N);
     
-    %xd = poses(:, N+1:end);
-    
     % Convert to SI states
     xi = uni_to_si_states(x);
     
+    
+    
     %% Algorithm
-    [Pxd, Pyd] = lloydsAlgorithmDrone(xd(1,:)',xd(2,:)', crs, verCellHandleAerial, 100, center, sigma, detSigma, true, weights);
-    [Px, Py, weights] = lloydsAlgorithmWeighted(x(1,:)',x(2,:)',xd(1,:)',xd(2,:)', ...
-        crs, verCellHandle, verCellHandleAerial, 100, center, sigma, detSigma,weights, true);
+    [Pxd, Pyd] = lloydsAlgorithmQ(xd(1,:)',xd(2,:)', x(1, :)', x(2, :)',crs, verCellHandleAerial, 100, center, sigma, detSigma, true, weights);
     
-
+    [Px, Py] = lloydsAlgorithmG(x(1,:)',x(2,:)',xd(1,:)',xd(2,:)', ...
+        crs, verCellHandle, verCellHandleAerial, 100, center, sigma, detSigma, true);
     
-    
-    %xd = [Pxd'; Pyd'];
     
     dxir = motion_controller(x(1:2, :), [Px';Py']);
     
@@ -302,8 +269,8 @@ end
 
 %% Lloyds algorithm put together by Aaron Becker
 
-function [Px, Py, weights] = lloydsAlgorithmWeighted(Px,Py,Pxd, Pyd, crs, verCellHandle, ...
-    verCellHandleAerial, res, center, sigma, detSigma, weights, plt)
+function [Px, Py] = lloydsAlgorithmG(Px,Py,Pxd, Pyd, crs, verCellHandle, ...
+    verCellHandleAerial, res, center, sigma, detSigma, plt)
 % LLOYDSALGORITHM runs Lloyd's algorithm on the particles at xy positions
 % (Px,Py) within the boundary polygon crs for numIterations iterations
 % showPlot = true will display the results graphically.
@@ -340,158 +307,87 @@ rng(sd)
 xrange = max(crs(:,1)) - min(crs(:,1));
 yrange = max(crs(:,2)) - min(crs(:,2));
 
-% Apply LLYOD's Algorithm
-[v,c]=VoronoiBounded(Px,Py,crs);
 
 
+% Apply lloyds
 
-[vd,cd]=power_bounded(Pxd, Pyd, weights, crs);
+[vd,cd]=VoronoiBounded(Pxd, Pyd, crs);
 
-numBots = zeros(1, numel(cd));
-avgDensity = zeros(1, numel(cd));
+
 
 %% calculate number of bots in each aerial partition
-
-cN = [];           %Get rid of cells that don't exist
-for k = 1:numel(cd)
-    
-    if numel(cd{k}) > 0
-        cN = [cN cd(k)];
-    end
-end
-cd = cN;
+aerialCell = zeros(1, numel(Px));
 for b = 1:numel(cd)
-    for a = 1:numel(Py)
-        if inpolygon(Px(a), Py(a), vd(cd{b}, 1), vd(cd{b}, 2))
-            numBots(b) = numBots(b) + 1;
-        end
-    end
-    aerialCoords = [];
-    
-    xVoronoiAerial = linspace(min(vd(cd{b},1)),max(vd(cd{b},1)),res);  %linspace(min(v(c{i},1)),max(v(c{i},1)),res);
-    yVoronoiAerial = linspace(min(vd(cd{b},2)),max(vd(cd{b},2)),res);  %linspace(min(v(c{i},2)),max(v(c{i},2)),res);
-
-    [aerialX aerialY] = meshgrid(xVoronoiAerial, yVoronoiAerial);
-    aerialCoords = [aerialX(:) aerialY(:)];
-    in1 = inpolygon(aerialCoords(:,1),aerialCoords(:,2),vd(cd{b},1),vd(cd{b},2));
-    xInAerialVoronoi = aerialCoords(in1, 1);
-    yInAerialVoronoi = aerialCoords(in1, 2);
-    avgDensity(b) = mean(gaussC(xInAerialVoronoi, yInAerialVoronoi, sigma, detSigma, center));
-    totalMass(b) = sum(gaussC(xInAerialVoronoi, yInAerialVoronoi, sigma, detSigma, center));
-    totalArea(b) = numel(xInAerialVoronoi);
+    aerialCell(inpolygon(Px, Py, vd(cd{b}, 1), vd(cd{b}, 2))) = b;
 end
-
 %% calculate average density of each partition
 
-alpha = 1/sum(avgDensity);
 
-weights = (avgDensity*alpha)./(numBots + 1).^3;
-% weights = totalMass./exp(numBots);
-% avgDensity
-% totalMass./totalArea
-% weights = ones(1, 5);
 
-% weights = totalMass./(numBots+1);
-% 
-% mask = (numBots == 0);
-% 
-% weights(mask) = 1;
-% 
-% weights = weights - 1;
-
-weights
-[vd cd] = power_bounded(Pxd, Pyd, weights', crs);
-coveredArea = [];
-for i = 1:numel(c) %calculate the center of mass of each cell
+for j = 1:numel(cd)
     
-    
-    xVoronoi = linspace(min(v(c{i},1)),max(v(c{i},1)),res/2);  %linspace(min(v(c{i},1)),max(v(c{i},1)),res);
-    yVoronoi = linspace(min(v(c{i},2)),max(v(c{i},2)),res/2);  %linspace(min(v(c{i},2)),max(v(c{i},2)),res);
-    
-    whichDrone = 0;
-    for l = 1:numel(cd)
-        if inpolygon(Px(i), Py(i), vd(cd{l}, 1), vd(cd{l}, 2))
-            whichDrone = l;
+    if any(aerialCell == j)
+        
+        [v, c] = VoronoiBounded(Px(aerialCell == j), Py(aerialCell == j), [vd(cd{j}, 1), vd(cd{j}, 2)]);
+        currX = Px(aerialCell == j);
+        for i = 1:numel(c) %calculate the center of mass of each cell
+          
+            index = find(Px == currX(i));
+            if ~isempty(c{i})
+                xVoronoi = linspace(min(v(c{i},1)),max(v(c{i},1)),res/2);  %linspace(min(v(c{i},1)),max(v(c{i},1)),res);
+                yVoronoi = linspace(min(v(c{i},2)),max(v(c{i},2)),res/2);  %linspace(min(v(c{i},2)),max(v(c{i},2)),res);
+                
+                [coordsX, coordsY] = meshgrid(xVoronoi, yVoronoi);
+                coords = [coordsX(:) coordsY(:)];
+                
+                in1 = inpolygon(coords(:,1),coords(:,2),v(c{i},1),v(c{i},2));
+                
+                xArrayIn = coords(in1, 1)';
+                yArrayIn = coords(in1, 2)';
+                positionMassSumX = 0;
+                positionMassSumY = 0;
+                totalMass = 0;
+                
+                for m = 1:length(xArrayIn)
+                    zArrayIn = gaussC(xArrayIn(m),yArrayIn(m), sigma, detSigma, center);
+                    positionMassSumX = positionMassSumX + zArrayIn*xArrayIn(m);
+                    positionMassSumY = positionMassSumY + zArrayIn*yArrayIn(m);
+                    totalMass = totalMass + zArrayIn;
+                end
+                
+                positionMassSumX = positionMassSumX/(totalMass);
+                positionMassSumY = positionMassSumY/(totalMass);
+                cx = positionMassSumX;
+                cy = positionMassSumY;
+                cx = min(max(vd(cd{j}, 1)),max(min(vd(cd{j}, 1)), cx));
+                cy = min(max(vd(cd{j}, 2)),max(min(vd(cd{j}, 2)), cy));
+                
+                if ~isnan(cx) && inpolygon(cx,cy,vd(cd{j}, 1),vd(cd{j}, 2))
+                    Px(index) = cx;  %don't update if goal is outside the area
+                    Py(index) = cy;
+                    
+                    
+                end
+                
+                set(verCellHandle(index), 'XData',v(c{i},1),'YData',v(c{i},2));
+  
+            end
         end
         
-    end
-    
-    if whichDrone == 0
-        Px(i) = Px(i) + .01;
-        Py(i) = Py(i) + .01;
-        for l = 1:numel(cd)
-            if inpolygon(Px(i), Py(i), vd(cd{l}, 1), vd(cd{l}, 2))
-                whichDrone = l;
-                
-            end
-            
-        end
-    end
-    coords = [];
-    
-    %     for a = 1:numel(yVoronoi)
-    %         coords = [coords; [xVoronoi' yVoronoi(a)*ones(numel(xVoronoi),1)]];
-    %     end
-    [coordsX coordsY] = meshgrid(xVoronoi, yVoronoi);
-    coords = [coordsX(:) coordsY(:)];
-    
-    in1 = inpolygon(coords(:,1),coords(:,2),v(c{i},1),v(c{i},2));
-    in2 = inpolygon(coords(:,1),coords(:,2),vd(cd{whichDrone},1),vd(cd{whichDrone},2));
-    
-    
-    xArrayIn = coords(in1 & in2, 1)';
-    yArrayIn = coords(in1 & in2, 2)';
-    positionMassSumX = 0;
-    positionMassSumY = 0;
-    totalMass = 0;
-    
-    for j = 1:length(xArrayIn)
-        zArrayIn = gaussC(xArrayIn(j),yArrayIn(j), sigma, detSigma, center);
-        positionMassSumX = positionMassSumX + zArrayIn*xArrayIn(j);
-        positionMassSumY = positionMassSumY + zArrayIn*yArrayIn(j);
-        totalMass = totalMass + zArrayIn;
-    end
-    %h = figure(2);
-    
-    coveredArea = [coveredArea, {[xArrayIn' yArrayIn']}];
-    
-    if i == numel(c)
-        %plot(coveredArea{1}(:, 1), coveredArea{1}(:, 2), '.k', coveredArea{2}(:,1)
-        %, coveredArea{2}(:,2), '.g',coveredArea{3}(:,1), coveredArea{3}(:,2), '.r' )
-        axis([-1.6 1.6 -1 1])
-    end
-    
-    
-    
-    
-    positionMassSumX = positionMassSumX/(totalMass);
-    positionMassSumY = positionMassSumY/(totalMass);
-    cx = positionMassSumX;
-    cy = positionMassSumY;
-    cx = min(max(crs(:,1)),max(min(crs(:,1)), cx));
-    cy = min(max(crs(:,2)),max(min(crs(:,2)), cy));
-    if ~isnan(cx) && inpolygon(cx,cy,crs(:,1),crs(:,2))
-        Px(i) = cx;  %don't update if goal is outside the area
-        Py(i) = cy;
+        set(verCellHandleAerial(j), 'XData', vd(cd{j}, 1), 'YData', vd(cd{j},2) );
     end
 end
-if plt
-    for i = 1:numel(c) % update Voronoi cells
-        set(verCellHandle(i), 'XData',v(c{i},1),'YData',v(c{i},2));
-    end
-    for i = 1:numel(cd)
-        set(verCellHandleAerial(i), 'XData', vd(cd{i}, 1), 'YData', vd(cd{i},2) );
-        %set(aerialDroneHandle(i), 'XData', Pxd(i), 'YData', Pyd);
-    end
-    
-end
+
 end
 
 function [Cx,Cy] = PolyCentroid(X,Y)
 % POLYCENTROID returns the coordinates for the centroid of polygon with vertices X,Y
-% The centroid of a non-self-intersecting closed polygon defined by n vertices (x0,y0), (x1,y1), ..., (xn?1,yn?1) is the point (Cx, Cy), where
-% In these formulas, the vertices are assumed to be numbered in order of their occurrence along the polygon's perimeter, and the vertex ( xn, yn )
-% is assumed to be the same as ( x0, y0 ). Note that if the points are numbered in clockwise order the area A, computed as above, will have a negative
+% The centroid of a non-self-intersecting closed polygon defined by n vertices (x0,y0), (x1,y1), ...,
+% (xn?1,yn?1) is the point (Cx, Cy), where
+% In these formulas, the vertices are assumed to be numbered in order of their occurrence along the polygon's
+% perimeter, and the vertex ( xn, yn )
+% is assumed to be the same as ( x0, y0 ). Note that if the points are numbered in clockwise order the area A,
+% computed as above, will have a negative
 % sign; but the centroid coordinates will be correct even in this case.http://en.wikipedia.org/wiki/Centroid
 % A = polyarea(X,Y)
 
@@ -569,7 +465,7 @@ for ij=1:length(C)
 end
 end
 
-function [Px, Py] = lloydsAlgorithmDrone(Px,Py, crs, verCellHandle, res, center, sigma, detSigma,plt, weights)
+function [Px, Py] = lloydsAlgorithmQ(Px,Py, Pxr, Pyr, crs, verCellHandle, res, center, sigma, detSigma,plt, weights)
 % LLOYDSALGORITHM runs Lloyd's algorithm on the particles at xy positions
 % (Px,Py) within the boundary polygon crs for numIterations iterations
 % showPlot = true will display the results graphically.
@@ -607,70 +503,65 @@ xrange = max(crs(:,1)) - min(crs(:,1));
 yrange = max(crs(:,2)) - min(crs(:,2));
 
 % Apply LLYOD's Algorithm
-[v,c]=power_bounded(Px, Py, weights, crs);
-cN = [];
-for k = 1:numel(c)
-    
-    if numel(c{k}) > 0
-        cN = [cN c(k)];
-    end
-end
-c = cN;
+[v,c]=VoronoiBounded(Px, Py, crs);
+
 colors = cool(numel(Px));
-%     figure(2)
-%     for i = 1:numel(Px)
-%         plot(Px, Py, 'ok')
-%         hold on;
-%         patch(v(c{i},1),v(c{i},2),colors(i,:),'FaceAlpha', 0.3);
-%     end
-%     for i = 1:numel(c) %calculate the center of mass of each cell
-%         xVoronoi = linspace(min(v(c{i},1)),max(v(c{i},1)),res);
-%         yVoronoi = linspace(min(v(c{i},2)),max(v(c{i},2)),res);
-%         coords = [];
-%
-%         for a = 1:numel(yVoronoi)
-%             coords = [coords; [xVoronoi' yVoronoi(a)*ones(numel(xVoronoi),1)]];
-%         end
-%         in = inpolygon(coords(:, 1),coords(:, 2),v(c{i},1),v(c{i},2));
-%         xArrayIn = coords(in, 1)';
-%         yArrayIn = coords(in, 2)';
-%         positionMassSumX = 0;
-%         positionMassSumY = 0;
-%         totalMass = 0;
-%
-%         for j = 1:length(xArrayIn)
-%
-%                 zArrayIn = gaussC(xArrayIn(j),yArrayIn(j), sigma, detSigma, center);
-%                 positionMassSumX = positionMassSumX + zArrayIn*xArrayIn(j);
-%                 positionMassSumY = positionMassSumY + zArrayIn*yArrayIn(j);
-%                 totalMass = totalMass + zArrayIn;
-%         end
-%
-%
-%         positionMassSumX = positionMassSumX/(totalMass);
-%         positionMassSumY = positionMassSumY/(totalMass);
-%         cx = positionMassSumX;
-%         cy = positionMassSumY;
-%         cx = min(max(crs(:,1)),max(min(crs(:,1)), cx));
-%         cy = min(max(crs(:,2)),max(min(crs(:,2)), cy));
-for i = 1:numel(c) %calculate the centroid of each cell
-    [cx,cy] = PolyCentroid(v(c{i},1),v(c{i},2));
+
+for i = 1:numel(c) %calculate the center of mass of each cell
+    xVoronoi = linspace(min(v(c{i},1)),max(v(c{i},1)),res);
+    yVoronoi = linspace(min(v(c{i},2)),max(v(c{i},2)),res);
+    coords = [];
+    
+    for a = 1:numel(yVoronoi)
+        coords = [coords; [xVoronoi' yVoronoi(a)*ones(numel(xVoronoi),1)]];
+    end
+    
+    [X Y] = meshgrid(xVoronoi, yVoronoi);
+    coords = [X(:), Y(:)];
+    in = inpolygon(coords(:, 1),coords(:, 2),v(c{i},1),v(c{i},2));
+    xArrayIn = coords(in, 1)';
+    yArrayIn = coords(in, 2)';
+    positionMassSumX = 0;
+    positionMassSumY = 0;
+    totalMass = 0;
+    
+    for j = 1:length(xArrayIn)
+
+        zArrayIn = gaussC(xArrayIn(j),yArrayIn(j), sigma, detSigma, [Pxr; Pyr]);
+        positionMassSumX = positionMassSumX + zArrayIn*xArrayIn(j);
+        positionMassSumY = positionMassSumY + zArrayIn*yArrayIn(j);
+        totalMass = totalMass + zArrayIn;
+    end
+    
+    
+    positionMassSumX = positionMassSumX/(totalMass);
+    positionMassSumY = positionMassSumY/(totalMass);
+    cx = positionMassSumX;
+    cy = positionMassSumY;
     cx = min(max(crs(:,1)),max(min(crs(:,1)), cx));
     cy = min(max(crs(:,2)),max(min(crs(:,2)), cy));
+    
+    
+    for i = 1:numel(c) %calculate the centroid of each cell
+        [cx,cy] = PolyCentroid(v(c{i},1),v(c{i},2));
+        cx = min(max(crs(:,1)),max(min(crs(:,1)), cx));
+        cy = min(max(crs(:,2)),max(min(crs(:,2)), cy));
+        if ~isnan(cx) && inpolygon(cx,cy,crs(:,1),crs(:,2))
+            Px(i) = cx;  %don't update if goal is outside the polygon
+            Py(i) = cy;
+        end
+    end
     if ~isnan(cx) && inpolygon(cx,cy,crs(:,1),crs(:,2))
-        Px(i) = cx;  %don't update if goal is outside the polygon
+        Px(i) = cx;  %don't update if goal is outside the area
         Py(i) = cy;
     end
-end
-if ~isnan(cx) && inpolygon(cx,cy,crs(:,1),crs(:,2))
-    Px(i) = cx;  %don't update if goal is outside the area
-    Py(i) = cy;
-end
-
-
-
-for i = 1:numel(c) % update Voronoi cells
-    set(verCellHandle(i), 'XData',v(c{i},1),'YData',v(c{i},2));
+    
+    
+    
+    for i = 1:numel(c) % update Voronoi cells
+        set(verCellHandle(i), 'XData',v(c{i},1),'YData',v(c{i},2));
+    end
+    
 end
 
 end
@@ -699,9 +590,9 @@ vec = [x(:)'; y(:)'].*(1./sqrt(x.^2 + y.^2))
 end
 
 function val = gaussC(x, y, sigma, detSigma, center)
-xc = center(1);
-yc = center(2);
+xc = center(1, :);
+yc = center(2, :);
 exponent = ((x-xc).^2/sigma(1,1) + (y-yc).^2/sigma(2,2))./(2);
 amplitude = 1 / (sqrt(detSigma) * 2*pi);
-val = amplitude  .* exp(-exponent);
+val = sum(amplitude  .* exp(-exponent));
 end
