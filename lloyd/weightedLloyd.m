@@ -34,8 +34,8 @@ crs = [r.boundaries(1), r.boundaries(3);
 %        r.boundaries(2), r.boundaries(3)];
    
 %Gausian Setup
-center = [1;0];
-sigma = 0.4*eye(2);
+center = [1 -1;0 0 ];
+sigma = 0.2*eye(2);
 detSigma = det(sigma);
 %% Grab tools we need to convert from single-integrator to unicycle dynamics
 
@@ -331,9 +331,9 @@ function [ordered_x, ordered_y] = poly2cw_custom(x,y)
 end
 
 function val = gaussC(x, y, sigma, detSigma, center)
-xc = center(1);
-yc = center(2);
+xc = center(1,:);
+yc = center(2,:);
 exponent = ((x-xc).^2/sigma(1,1) + (y-yc).^2/sigma(2,2))./(2);
 amplitude = 1 / (sqrt(detSigma) * 2*pi);  
-val = amplitude  * exp(-exponent);
+val = sum(amplitude  * exp(-exponent));
 end
