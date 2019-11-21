@@ -10,7 +10,7 @@ iterations = 2000;
 
 %% Set up the Robotarium object
 
-N = 7;
+N = 10;
 x_init = generate_initial_conditions(N,'Width',1.1,'Height',1.1,'Spacing', 0.35);
 x_init = x_init - [min(x_init(1,:)) - (-1.6 + 0.2);min(x_init(2,:)) - (-1 + 0.2);0];
 r = Robotarium('NumberOfRobots', N, 'ShowFigure', true,'InitialConditions',x_init);
@@ -34,7 +34,7 @@ crs = [r.boundaries(1), r.boundaries(3);
 %        r.boundaries(2), r.boundaries(3)];
    
 %Gausian Setup
-center = [1 -1;0 0 ];
+center = [-1 1 ;  0 0 ];
 sigma = 0.2*eye(2);
 detSigma = det(sigma);
 %% Grab tools we need to convert from single-integrator to unicycle dynamics

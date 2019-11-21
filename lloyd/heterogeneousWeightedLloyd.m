@@ -11,18 +11,25 @@ close all;
 
 rng(20);
 %Run the simulation for a specific number of iterations
-iterations = 2000;
-
+iterations = 1000;
+videoFLag = 0
 %% Set up the Robotarium object
 
 N = 10;
-K = 5;
+K = 2;
+
+% Working combinations N=10, K=3
+
+start_in_corner = true
 x_init = generate_initial_conditions(N); %,'Width',1.1,'Height',1.1,'Spacing', 0.35);
 x_init = x_init - [min(x_init(1,:)) - (-1.6 + 0.2);min(x_init(2,:)) - (-1 + 0.2);0];
-%x_init(1, :) = rand(1, N)-1.6;
-%x_init(2, :) = rand(1, N) - 1;
+if start_in_corner
+x_init(1, :) = rand(1, N)-1.6;
+x_init(2, :) = rand(1, N) - 1;
+else
 x_init(1, :) = rand(1, N)*3.2 - 1.6;
 x_init(2, :) = rand(1, N)*2 - 1;
+end
 r = Robotarium('NumberOfRobots', N, 'ShowFigure', true,'InitialConditions',x_init);
 
 
@@ -50,8 +57,8 @@ initial_drone_pose(3, :) = initial_drone_pose(3, :)*2*pi - pi;
 %        r.boundaries(2), r.boundaries(3)];
 
 %Gausian Setup
-center = [1 ;0 ];
-sigma = .2*eye(2);
+center = [-1 1;0 0];
+sigma = .15*eye(2);
 detSigma = det(sigma);
 
 sigmaR = .02*eye(2);
@@ -141,6 +148,14 @@ for i = 1:K % color according to
     set(pathHandleD(i),'XData',xDd,'YData',yDd);%plot path position
 end
 
+if videoFLag 
+    vid = VideoWriter('heterogeneous_coverage_control_video.mp4', 'MPEG-4');
+    vid.Quality = 100;
+    vid.FrameRate = 72;
+    open(vid);
+    writeVideo(vid, getframe(gcf));
+end
+
 xArrayD = linspace(r.boundaries(1),r.boundaries(2),plotRes);
 yArrayD = linspace(r.boundaries(3),r.boundaries(4),plotRes);
 zArrayD = ones(plotRes);
@@ -163,12 +178,17 @@ q = 1;
 %%
 prev_cell = zeros(1, N)
 
+res = 70
+
 for t = 1:iterations
-    
+    if videoFLag && mod(t,10)                               % Record a video frame every 10 iterations
+            writeVideo(vid, getframe(gcf)); 
+    end
+
     % Retrieve the most recent poses from the Robotarium.  The time delay is
     % approximately 0.033 seconds
     poses = r.get_poses();
-    x = poses(:, 1:N)
+    x = poses(:, 1:N);
     
     % Convert to SI states
     xi = uni_to_si_states(x);
@@ -177,10 +197,10 @@ for t = 1:iterations
     
     %% Algorithm
      
-    [Pxd, Pyd] = lloydsAlgorithmQ2(xd(1, :)', xd(2, :)', x(1, :)', x(2, :)', crs, verCellHandleAerial, 100, center, sigma, detSigma);
+    [Pxd, Pyd, cell_mass] = lloydsAlgorithmQ2(xd(1, :)', xd(2, :)', x(1, :)', x(2, :)', crs, verCellHandleAerial, res, center, sigma, detSigma);
     
-    [Px, Py, prev_cell] = lloydsAlgorithmG(x(1,:)',x(2,:)',xd(1,:)',xd(2,:)', 0., prev_cell,  ...
-        crs, verCellHandle, verCellHandleAerial, 100, center, sigma, detSigma, true);
+    [Px, Py, prev_cell] = lloydsAlgorithmG(x(1,:)',x(2,:)',xd(1,:)',xd(2,:)', 0.1, cell_mass,  ...
+        crs, verCellHandle, verCellHandleAerial, res, center, sigma, detSigma, true);
     
     
     dxir = motion_controller(x(1:2, :), [Px';Py']);
@@ -207,9 +227,6 @@ for t = 1:iterations
     %% Use barrier certificate and convert to unicycle dynamics
     dxu = si_to_uni_dyn(dxir, x);
     dxu = uni_barrier_cert_boundary(dxu, x);
-    
-    %dxud = si_to_uni_dyn(dxid, xd);
-    %dxud = uni_barrier_cert_boundary(dxud, xd);
     
     
     %% Send velocities to agents
@@ -241,6 +258,7 @@ for t = 1:iterations
     
     
 end
+if videoFLag; close(vid); end
 
 
 % We can call this function to debug our experiment!  Fix all the errors
@@ -275,7 +293,7 @@ end
 
 %% Lloyds algorithm put together by Aaron Becker
 
-function [Px, Py, cur_cell] = lloydsAlgorithmG(Px,Py,Pxd, Pyd, r,prev_cell, crs, verCellHandle, ...
+function [Px, Py, cur_cell] = lloydsAlgorithmG(Px,Py,Pxd, Pyd, r,cell_mass, crs, verCellHandle, ...
     verCellHandleAerial, res, center, sigma, detSigma, plt)
 % LLOYDSALGORITHM runs Lloyd's algorithm on the particles at xy positions
 % (Px,Py) within the boundary polygon crs for numIterations iterations
@@ -318,6 +336,11 @@ yrange = max(crs(:,2)) - min(crs(:,2));
 % Apply lloyds
 
 [vd,cd]=VoronoiBounded(Pxd, Pyd, crs);
+
+[PX PXD] = meshgrid(Px, Pxd);
+[PY PYD] = meshgrid(Py, Pyd);
+distance_matrix = sqrt((PX-PXD).^2 + (PY - PYD).^2);
+% The (i,j) position is the distance between quad i and robot j
 
 
 
@@ -374,12 +397,26 @@ for j = 1:numel(cd)
                 cx = min(max(vd(cd{j}, 1)),max(min(vd(cd{j}, 1)), cx));
                 cy = min(max(vd(cd{j}, 2)),max(min(vd(cd{j}, 2)), cy));
                 
-                if ~isnan(cx) %&& inpolygon(cx,cy,vd(cd{j}, 1),vd(cd{j}, 2))
+                if ~isnan(cx) 
                     Px(index) = cx;  %don't update if goal is outside the area
                     Py(index) = cy;
-                    
-                    
+                   
                 end
+                
+
+                if cell_mass(aerialCell(index)) < -1/numel(Px)
+                    
+                    important_cell_index = find(max(cell_mass) == cell_mass);
+                    Px(index) = Pxd(important_cell_index(1));
+                    Py(index) = Pyd(important_cell_index(1));
+                    
+                    
+                end         
+                    
+                    %NEED TO FIX IF to go to high cell mass
+                
+                
+                
                 
                 set(verCellHandle(index), 'XData',v(c{i},1),'YData',v(c{i},2));
                 
@@ -479,106 +516,6 @@ for ij=1:length(C)
 end
 end
 
-function [Px, Py] = lloydsAlgorithmQ(Px,Py, Pxr, Pyr, crs, verCellHandle, res, center, sigma, detSigma,plt)
-% LLOYDSALGORITHM runs Lloyd's algorithm on the particles at xy positions
-% (Px,Py) within the boundary polygon crs for numIterations iterations
-% showPlot = true will display the results graphically.
-%
-% Lloyd's algorithm starts with an initial distribution of samples or
-% points and consists of repeatedly executing one relaxation step:
-%   1.  The Voronoi diagram of all the points is computed.
-%   2.  Each cell of the Voronoi diagram is integrated and the centroid is computed.
-%   3.  Each point is then moved to the centroid of its Voronoi cell.
-%
-% Inspired by http://www.mathworks.com/matlabcentral/fileexchange/34428-voronoilimit
-% Requires the Polybool function of the mapping toolbox to run.
-%
-% Run with no input to see example.  To initialize a square with 50 robots
-% in left middle, run:
-%lloydsAlgorithm(0.01*rand(50,1),zeros(50,1)+1/2, [0,0;0,1;1,1;1,0], 200, true)
-%
-% Made by: Aaron Becker, atbecker@uh.edu
-format compact
-
-% initialize random generator in repeatable fashion
-sd = 20;
-rng(sd);
-
-%         crs = [ 0, 0;
-%             0, yrange;
-%             1/3*xrange, yrange;  % a world with a narrow passage
-%             1/3*xrange, 1/4*yrange;
-%             2/3*xrange, 1/4*yrange;
-%             2/3*xrange, yrange;
-%             xrange, yrange;
-%             xrange, 0];
-
-xrange = max(crs(:,1)) - min(crs(:,1));
-yrange = max(crs(:,2)) - min(crs(:,2));
-
-% Apply LLYOD's Algorithm
-[v,c]=VoronoiBounded(Px, Py, crs);
-
-colors = cool(numel(Px));
-
-for i = 1:numel(c) %calculate the center of mass of each cell
-    xVoronoi = linspace(min(v(c{i},1)),max(v(c{i},1)),res);
-    yVoronoi = linspace(min(v(c{i},2)),max(v(c{i},2)),res);
-    coords = [];
-    
-    for a = 1:numel(yVoronoi)
-        coords = [coords; [xVoronoi' yVoronoi(a)*ones(numel(xVoronoi),1)]];
-    end
-    
-    [X Y] = meshgrid(xVoronoi, yVoronoi);
-    coords = [X(:), Y(:)];
-    in = inpolygon(coords(:, 1),coords(:, 2),v(c{i},1),v(c{i},2));
-    xArrayIn = coords(in, 1)';
-    yArrayIn = coords(in, 2)';
-    positionMassSumX = 0;
-    positionMassSumY = 0;
-    totalMass = 0;
-    
-    for j = 1:length(xArrayIn)
-        
-        zArrayIn = gaussC(xArrayIn(j),yArrayIn(j), sigma, detSigma, [Pxr' center(1); Pyr' center(2)]);
-        positionMassSumX = positionMassSumX + zArrayIn*xArrayIn(j);
-        positionMassSumY = positionMassSumY + zArrayIn*yArrayIn(j);
-        totalMass = totalMass + zArrayIn;
-    end
-    
-    
-    positionMassSumX = positionMassSumX/(totalMass);
-    positionMassSumY = positionMassSumY/(totalMass);
-    cx = positionMassSumX;
-    cy = positionMassSumY;
-    %cx = min(max(crs(:,1)),max(min(crs(:,1)), cx));
-    %cy = min(max(crs(:,2)),max(min(crs(:,2)), cy));
-    
-    
-    for k = 1:numel(c) %calculate the centroid of each cell
-        [cx,cy] = PolyCentroid(v(c{k},1),v(c{k},2));
-        cx = min(max(crs(:,1)),max(min(crs(:,1)), cx));
-        cy = min(max(crs(:,2)),max(min(crs(:,2)), cy));
-        if ~isnan(cx) && inpolygon(cx,cy,crs(:,1),crs(:,2))
-            Px(i) = cx;  %don't update if goal is outside the polygon
-            Py(i) = cy;
-        end
-    end
-    if ~isnan(cx) && inpolygon(cx,cy,crs(:,1),crs(:,2))
-        Px(i) = cx;  %don't update if goal is outside the area
-        Py(i) = cy;
-    end
-    
-    
-    
-    for i = 1:numel(c) % update Voronoi cells
-        set(verCellHandle(i), 'XData',v(c{i},1),'YData',v(c{i},2));
-    end
-    
-end
-
-end
 
 function [hit] =  hitBound(x,y, crs, ep)
 max_x = max(crs(:, 1));
@@ -612,7 +549,7 @@ val = sum(amplitude  .* exp(-exponent));
 end
 
 
-function [Px, Py] = lloydsAlgorithmQ2(Px,Py,Pxr, Pyr, crs, verCellHandle, res, center, sigma, detSigma)
+function [Px, Py, cell_mass] = lloydsAlgorithmQ2(Px,Py,Pxr, Pyr, crs, verCellHandle, res, center, sigma, detSigma)
 % LLOYDSALGORITHM runs Lloyd's algorithm on the particles at xy positions
 % (Px,Py) within the boundary polygon crs for numIterations iterations
 % showPlot = true will display the results graphically.
@@ -635,8 +572,8 @@ format compact
 
 % initialize random generator in repeatable fashion
 sd = 20;
-rng(sd)
-field_mass = 0;
+rng(sd);
+total_field_mass = 0;
 total_robot_mass = 0;
 
 xrange = max(crs(:,1)) - min(crs(:,1));
@@ -648,10 +585,10 @@ aerialCell = zeros(1, numel(Pxr));
 for b = 1:numel(c)
     aerialCell(inpolygon(Pxr, Pyr, v(c{b}, 1), v(c{b}, 2))) = b;
 end
+cell_mass = zeros(1, numel(c));
 
 for i = 1:numel(c) %calculate the center of mass of each cell
-    xVoronoi = linspace(min(v(c{i},1)),max(v(c{i},1)),res);
-    yVoronoi = linspace(min(v(c{i},2)),max(v(c{i},2)),res);
+
     xVoronoi = linspace(min(crs(:, 1)), max(crs(:,1)), res);
     yVoronoi = linspace(min(crs(:, 2)), max(crs(:,2)), res);
     coords = [];
@@ -659,30 +596,35 @@ for i = 1:numel(c) %calculate the center of mass of each cell
     [X Y] = meshgrid(xVoronoi, yVoronoi);
     coords = [X(:) Y(:)];
     
-    
     in = inpolygon(coords(:, 1),coords(:, 2),v(c{i},1),v(c{i},2));
     xArrayIn = coords(in, 1)';
     yArrayIn = coords(in, 2)';
+    
     positionMassSumX = 0;
     positionMassSumY = 0;
     totalMass = 0;
-    
+    total_robot_mass = 0;
+    total_field_mass = 0;
     
     for j = 1:length(xArrayIn)
+        
         dx = (max(crs(:, 1)) - min(crs(:, 1)))/res;
         dy = (max(crs(:, 2)) - min(crs(:, 2)))/res;
         
         robotMass = gaussC(xArrayIn(j),yArrayIn(j), sigma, detSigma, [Pxr';Pyr'])/numel(Pxr);
-        
-        zArrayIn = (robotMass);
+        fieldMass = gaussC(xArrayIn(j),yArrayIn(j), sigma, detSigma, center)/(numel(center)/2);
+        zArrayIn = 1;
         
         total_robot_mass = total_robot_mass + robotMass*dx*dy;
+        total_field_mass = total_field_mass + fieldMass*dx*dy;
         positionMassSumX = positionMassSumX + zArrayIn*xArrayIn(j);
         positionMassSumY = positionMassSumY + zArrayIn*yArrayIn(j);
         totalMass = totalMass + zArrayIn;
     end
-   
     
+    total_robot_mass = numel(aerialCell(aerialCell == i))/numel(Pyr);
+    cell_mass(i) = -total_robot_mass + total_field_mass;
+ 
     positionMassSumX = positionMassSumX/(totalMass);
     positionMassSumY = positionMassSumY/(totalMass);
     cx = positionMassSumX;

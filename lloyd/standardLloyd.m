@@ -168,14 +168,6 @@ function [Px, Py] = lloydsAlgorithm(Px,Py, crs, verCellHandle)
     sd = 20;
     rng(sd)
 
-%         crs = [ 0, 0;    
-%             0, yrange;
-%             1/3*xrange, yrange;  % a world with a narrow passage
-%             1/3*xrange, 1/4*yrange;
-%             2/3*xrange, 1/4*yrange;
-%             2/3*xrange, yrange;
-%             xrange, yrange;
-%             xrange, 0];
 
     xrange = max(crs(:,1)) - min(crs(:,1));
     yrange = max(crs(:,2)) - min(crs(:,2));
@@ -201,7 +193,10 @@ end
 function [Cx,Cy] = PolyCentroid(X,Y)
     % POLYCENTROID returns the coordinates for the centroid of polygon with vertices X,Y
     % The centroid of a non-self-intersecting closed polygon defined by n vertices (x0,y0), (x1,y1), ..., (xn?1,yn?1) is the point (Cx, Cy), where
-    % In these formulas, the vertices are assumed to be numbered in order of their occurrence along the polygon's perimeter, and the vertex ( xn, yn ) is assumed to be the same as ( x0, y0 ). Note that if the points are numbered in clockwise order the area A, computed as above, will have a negative sign; but the centroid coordinates will be correct even in this case.http://en.wikipedia.org/wiki/Centroid
+    % In these formulas, the vertices are assumed to be numbered in order of their occurrence along
+    % the polygon's perimeter, and the vertex ( xn, yn ) is assumed to be the same as ( x0, y0 ). 
+    % Note that if the points are numbered in clockwise order the area A, computed as above, 
+    % will have a negative sign; but the centroid coordinates will be correct even in this case.http://en.wikipedia.org/wiki/Centroid
     % A = polyarea(X,Y)
 
     Xa = [X(2:end);X(1)];
