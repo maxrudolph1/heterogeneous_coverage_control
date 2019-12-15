@@ -6,13 +6,21 @@
 %% Experiment Constants
 close all;
 %Run the simulation for a specific number of iterations
-iterations = 2000;
+iterations = 2500;
 
 %% Set up the Robotarium object
-
-N = 10;
-x_init = generate_initial_conditions(N,'Width',1.1,'Height',1.1,'Spacing', 0.35);
+videoFlag = 0;
+N = 15;
+start_in_corner = true
+x_init = generate_initial_conditions(N); %,'Width',1.1,'Height',1.1,'Spacing', 0.35);
 x_init = x_init - [min(x_init(1,:)) - (-1.6 + 0.2);min(x_init(2,:)) - (-1 + 0.2);0];
+if start_in_corner
+x_init(1, :) = rand(1, N)-1.6;
+x_init(2, :) = rand(1, N) - 1;
+else
+x_init(1, :) = rand(1, N)*3.2 - 1.6;
+x_init(2, :) = rand(1, N)*2 - 1;
+end
 r = Robotarium('NumberOfRobots', N, 'ShowFigure', true,'InitialConditions',x_init);
 
 %Initialize velocity vector
@@ -38,6 +46,14 @@ center = [-1 1 ;  0 0 ];
 sigma = 0.2*eye(2);
 detSigma = det(sigma);
 %% Grab tools we need to convert from single-integrator to unicycle dynamics
+
+if videoFLag 
+    vid = VideoWriter('regular_weighted_control_video.mp4', 'MPEG-4');
+    vid.Quality = 100;
+    vid.FrameRate = 72;
+    open(vid);
+    writeVideo(vid, getframe(gcf));
+end
 
 % Single-integrator -> unicycle dynamics mapping
 [~, uni_to_si_states] = create_si_to_uni_mapping();
@@ -79,11 +95,14 @@ for i = 1:length(xArray)
         zArray(i,j) = gaussC(xArray(i),yArray(j),sigma, detSigma, center);
     end
 end
-potentialHandle = contour(xArray,yArray,zArray', 'LineWidth',5, 'LevelStep',0.1,'ShowText','on');
+potentialHandle = contour(xArray,yArray,zArray', 'LineWidth',1, 'LevelStep',0.1,'ShowText','on');
 r.step();
 %% Main Loop
-
+total_cost = [];
 for t = 1:iterations
+    if videoFLag && mod(t,10)                               % Record a video frame every 10 iterations
+            writeVideo(vid, getframe(gcf)); 
+    end
     
     % Retrieve the most recent poses from the Robotarium.  The time delay is
     % approximately 0.033 seconds
@@ -94,8 +113,11 @@ for t = 1:iterations
     
     %% Algorithm
     
-    [Px, Py] = lloydsAlgorithm(x(1,:)',x(2,:)', crs, verCellHandle, 100, center, sigma, detSigma);
+    [Px, Py] = lloydsAlgorithm(x(1,:)',x(2,:)', crs, verCellHandle, 70, center, sigma, detSigma);
     dxi = motion_controller(x(1:2, :), [Px';Py']);
+    costs = calculate_cost( x(1, :)', x(2, :)', crs, center, sigma, detSigma, 70);
+    
+    total_cost = [total_cost sum(costs)];
        
     %% Avoid actuator errors
     
@@ -126,7 +148,17 @@ for t = 1:iterations
     %Iterate experiment
     r.step();
 end
+if videoFLag; close(vid); end
 
+figure(2)
+plot(total_cost)
+axis([0 iterations 0 1])
+title(['Weighted Lloyd with ' num2str(N) ' ground robots'])
+xlabel('Time')
+ylabel('Computed Cost')
+grid on;
+saveas(gcf, ['weighter_lloyd_' num2str(N) '_bots.png'])
+save('weighted_cost', 'total_cost')
 % We can call this function to debug our experiment!  Fix all the errors
 % before submitting to maximize the chance that your experiment runs
 % successfully.
@@ -336,4 +368,38 @@ yc = center(2,:);
 exponent = ((x-xc).^2/sigma(1,1) + (y-yc).^2/sigma(2,2))./(2);
 amplitude = 1 / (sqrt(detSigma) * 2*pi);  
 val = sum(amplitude  * exp(-exponent));
+end
+
+function [individual_costs] = calculate_cost(Px, Py, crs, center, sigma, detSigma, res)
+
+[v c] = VoronoiBounded(Px, Py, crs);
+individual_costs = zeros(1, numel(Px));
+for i = 1:numel(c) %calculate the center of mass of each cell
+
+    xVoronoi = linspace(min(crs(:, 1)), max(crs(:,1)), res);
+    yVoronoi = linspace(min(crs(:, 2)), max(crs(:,2)), res);
+    
+    [X Y] = meshgrid(xVoronoi, yVoronoi);
+    coords = [X(:) Y(:)];
+    
+    in = inpolygon(coords(:, 1),coords(:, 2),v(c{i},1),v(c{i},2));
+    xArrayIn = coords(in, 1)';
+    yArrayIn = coords(in, 2)';
+    
+    integral_mass = 0;
+    
+    for j = 1:length(xArrayIn)
+        
+        dx = (max(crs(:, 1)) - min(crs(:, 1)))/res;
+        dy = (max(crs(:, 2)) - min(crs(:, 2)))/res;
+                   
+        fieldDensity = gaussC(xArrayIn(j),yArrayIn(j), sigma, detSigma, center)/(numel(center)/2);
+        integral_mass = integral_mass + norm([(xArrayIn(j) - Px(i)) (yArrayIn(j) - Py(i))])*fieldDensity*dx*dy;
+        
+    end
+    
+    individual_costs(i) = integral_mass;
+end
+
+
 end

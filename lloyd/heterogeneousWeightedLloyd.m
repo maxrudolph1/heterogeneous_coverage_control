@@ -11,12 +11,12 @@ close all;
 
 rng(20);
 %Run the simulation for a specific number of iterations
-iterations = 1000;
+iterations = 2500;  
 videoFLag = 0
 %% Set up the Robotarium object
 
 N = 10;
-K = 2;
+K = 4;
 
 % Working combinations N=10, K=3
 
@@ -61,7 +61,7 @@ center = [-1 1;0 0];
 sigma = .15*eye(2);
 detSigma = det(sigma);
 
-sigmaR = .02*eye(2);
+sigmaR = .2*eye(2);
 detSigmaR = det(sigmaR);
 %% Grab tools we need to convert from single-integrator to unicycle dynamics
 
@@ -73,7 +73,7 @@ uni_barrier_cert_boundary = create_uni_barrier_certificate_with_boundary();
 si_barrier_cert_boundary = create_si_barrier_certificate();
 % Single-integrator position controller
 motion_controller = create_si_position_controller('XVelocityGain', 5, 'YVelocityGain', 5, 'VelocityMagnitudeLimit', 1);
-drone_motion_controller = create_si_position_controller('XVelocityGain', 10, 'YVelocityGain', 10, 'VelocityMagnitudeLimit', 10);
+drone_motion_controller = create_si_position_controller('XVelocityGain', .8, 'YVelocityGain', .8, 'VelocityMagnitudeLimit', .1);
 
 %% Plotting Setup
 
@@ -87,6 +87,8 @@ verCellHandle = zeros(N,1);
 verCellHandleAerial = zeros(K,1);
 cellColors = cool(N);
 cellColorsD = cool(K);
+
+figure(1)
 
 for i = 1:N % color according to robot
     verCellHandle(i)  = patch(x(1,i),x(2,i),cellColors(i,:),'FaceAlpha', 0.3); % use color i  -- no robot assigned yet
@@ -179,7 +181,7 @@ q = 1;
 prev_cell = zeros(1, N)
 
 res = 70
-
+total_cost = 0;
 for t = 1:iterations
     if videoFLag && mod(t,10)                               % Record a video frame every 10 iterations
             writeVideo(vid, getframe(gcf)); 
@@ -199,10 +201,11 @@ for t = 1:iterations
      
     [Pxd, Pyd, cell_mass] = lloydsAlgorithmQ2(xd(1, :)', xd(2, :)', x(1, :)', x(2, :)', crs, verCellHandleAerial, res, center, sigma, detSigma);
     
-    [Px, Py, prev_cell] = lloydsAlgorithmG(x(1,:)',x(2,:)',xd(1,:)',xd(2,:)', 0.1, cell_mass,  ...
+    [Px, Py, prev_cell, cur_cost] = lloydsAlgorithmG(x(1,:)',x(2,:)',xd(1,:)',xd(2,:)', 0.1, cell_mass,  ...
         crs, verCellHandle, verCellHandleAerial, res, center, sigma, detSigma, true);
+    costs = calculate_cost( x(1, :)', x(2, :)', crs, center, sigma, detSigma, res);
     
-    
+    total_cost = [total_cost sum(costs)];
     dxir = motion_controller(x(1:2, :), [Px';Py']);
     
     dxid = drone_motion_controller(xd(1:2, :), [Pxd'; Pyd']);
@@ -260,7 +263,15 @@ for t = 1:iterations
 end
 if videoFLag; close(vid); end
 
-
+figure(2)
+plot(total_cost)
+axis([0 iterations 0 1])
+title(['Heterogeneous Weight Lloyd with ' num2str(K) ' aerial partitions and ' num2str(N) ' ground robots'])
+xlabel('Time')
+ylabel('Computed Cost')
+grid on;
+saveas(gcf, ['heterogeneous_lloyd_with_' num2str(N) '_bots.png'])
+save('heterogenesous_cost', 'total_cost')
 % We can call this function to debug our experiment!  Fix all the errors
 % before submitting to maximize the chance that your experiment runs
 % successfully.
@@ -293,7 +304,7 @@ end
 
 %% Lloyds algorithm put together by Aaron Becker
 
-function [Px, Py, cur_cell] = lloydsAlgorithmG(Px,Py,Pxd, Pyd, r,cell_mass, crs, verCellHandle, ...
+function [Px, Py, cur_cell, cell_cost] = lloydsAlgorithmG(Px,Py,Pxd, Pyd, r,cell_mass, crs, verCellHandle, ...
     verCellHandleAerial, res, center, sigma, detSigma, plt)
 % LLOYDSALGORITHM runs Lloyd's algorithm on the particles at xy positions
 % (Px,Py) within the boundary polygon crs for numIterations iterations
@@ -352,6 +363,8 @@ end
 
 cur_cell = aerialCell;
 
+cell_cost = zeros(1,numel(Px));
+
 %% calculate average density of each partition
 
 for j = 1:numel(cd)
@@ -364,8 +377,7 @@ for j = 1:numel(cd)
             
             index = find(Px == currX(i));
             if ~isempty(c{i})
-                %xVoronoi = linspace(min(v(c{i},1)) - r,max(v(c{i},1)) + r,res);  %linspace(min(v(c{i},1)),max(v(c{i},1)),res);
-                %yVoronoi = linspace(min(v(c{i},2)) - r,max(v(c{i},2)) + r,res);  %linspace(min(v(c{i},2)),max(v(c{i},2)),res);
+                
                 xVoronoi = linspace(min(crs(:,1)), max(crs(:, 1)), res);
                 yVoronoi = linspace(min(crs(:, 2)), max(crs(:, 2)), res);
                 
@@ -382,14 +394,17 @@ for j = 1:numel(cd)
                 positionMassSumX = 0;
                 positionMassSumY = 0;
                 totalMass = 0;
-                
+                integral_mass = 0;
+                dx = (max(crs(:, 1)) - min(crs(:, 1)))/res;
+                dy = (max(crs(:, 2)) - min(crs(:, 2)))/res;
                 for m = 1:length(xArrayIn)
                     zArrayIn = gaussC(xArrayIn(m),yArrayIn(m), sigma, detSigma, center);
+                    integral_mass = integral_mass + norm([(xArrayIn(m) - Px(index)) (yArrayIn(m) - Py(index))])*zArrayIn*dx*dy;
                     positionMassSumX = positionMassSumX + zArrayIn*xArrayIn(m);
                     positionMassSumY = positionMassSumY + zArrayIn*yArrayIn(m);
                     totalMass = totalMass + zArrayIn;
                 end
-                
+                cell_cost(index) = integral_mass;
                 positionMassSumX = positionMassSumX/(totalMass);
                 positionMassSumY = positionMassSumY/(totalMass);
                 cx = positionMassSumX;
@@ -421,13 +436,17 @@ for j = 1:numel(cd)
                 set(verCellHandle(index), 'XData',v(c{i},1),'YData',v(c{i},2));
                 
             end
+            
         end
         
         set(verCellHandleAerial(j), 'XData', vd(cd{j}, 1), 'YData', vd(cd{j},2) );
         
         
     end
+   
 end
+cell_mass;
+cell_cost = sum(cell_cost);
 
 end
 
@@ -642,4 +661,38 @@ end
 for i = 1:numel(c) % update Voronoi cells
     set(verCellHandle(i), 'XData',v(c{i},1),'YData',v(c{i},2));
 end
+end
+
+function [individual_costs] = calculate_cost(Px, Py, crs, center, sigma, detSigma, res)
+
+[v c] = VoronoiBounded(Px, Py, crs);
+individual_costs = zeros(1, numel(Px));
+for i = 1:numel(c) %calculate the center of mass of each cell
+
+    xVoronoi = linspace(min(crs(:, 1)), max(crs(:,1)), res);
+    yVoronoi = linspace(min(crs(:, 2)), max(crs(:,2)), res);
+    
+    [X Y] = meshgrid(xVoronoi, yVoronoi);
+    coords = [X(:) Y(:)];
+    
+    in = inpolygon(coords(:, 1),coords(:, 2),v(c{i},1),v(c{i},2));
+    xArrayIn = coords(in, 1)';
+    yArrayIn = coords(in, 2)';
+    
+    integral_mass = 0;
+    
+    for j = 1:length(xArrayIn)
+        
+        dx = (max(crs(:, 1)) - min(crs(:, 1)))/res;
+        dy = (max(crs(:, 2)) - min(crs(:, 2)))/res;
+                   
+        fieldDensity = gaussC(xArrayIn(j),yArrayIn(j), sigma, detSigma, center)/(numel(center)/2);
+        integral_mass = integral_mass + norm([(xArrayIn(j) - Px(i)) (yArrayIn(j) - Py(i))])*fieldDensity*dx*dy;
+        
+    end
+    
+    individual_costs(i) = integral_mass;
+end
+
+
 end

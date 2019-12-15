@@ -10,7 +10,7 @@ iterations = 2000;
 
 %% Set up the Robotarium object
 
-N = 7;
+N = 4;
 x_init = generate_initial_conditions(N)%,'Width',1.1,'Height',1.1,'Spacing', 0.35);
 x_init = x_init - [min(x_init(1,:)) - (-1.6 + 0.2);min(x_init(2,:)) - (-1 + 0.2);0];
 r = Robotarium('NumberOfRobots', N, 'ShowFigure', true,'InitialConditions',x_init);
