@@ -15,8 +15,8 @@ iterations = 2500;
 videoFLag = 0
 %% Set up the Robotarium object
 
-N = 10;
-K = 4;
+N = 20;
+K = 5;
 
 % Working combinations N=10, K=3
 
@@ -58,7 +58,7 @@ initial_drone_pose(3, :) = initial_drone_pose(3, :)*2*pi - pi;
 
 %Gausian Setup
 center = [-1 1;0 0];
-sigma = .15*eye(2);
+sigma = .2*eye(2);
 detSigma = det(sigma);
 
 sigmaR = .2*eye(2);
@@ -95,7 +95,7 @@ for i = 1:N % color according to robot
     hold on
 end
 
-
+impPtHandle = plot(0, 0, 'b.', 'MarkerSize', 40)
 pathHandle = zeros(N,1);
 pathHandleD = zeros(K,1);
 for i = 1:N % color according to
@@ -202,8 +202,8 @@ for t = 1:iterations
     [Pxd, Pyd, cell_mass] = lloydsAlgorithmQ2(xd(1, :)', xd(2, :)', x(1, :)', x(2, :)', crs, verCellHandleAerial, res, center, sigma, detSigma);
     
     [Px, Py, prev_cell, cur_cost] = lloydsAlgorithmG(x(1,:)',x(2,:)',xd(1,:)',xd(2,:)', 0.1, cell_mass,  ...
-        crs, verCellHandle, verCellHandleAerial, res, center, sigma, detSigma, true);
-    costs = calculate_cost( x(1, :)', x(2, :)', crs, center, sigma, detSigma, res);
+        crs, verCellHandle, verCellHandleAerial, res, center, sigma, detSigma, impPtHandle);
+    costs = 0;%calculate_cost( x(1, :)', x(2, :)', crs, center, sigma, detSigma, res);
     
     total_cost = [total_cost sum(costs)];
     dxir = motion_controller(x(1:2, :), [Px';Py']);
@@ -305,7 +305,7 @@ end
 %% Lloyds algorithm put together by Aaron Becker
 
 function [Px, Py, cur_cell, cell_cost] = lloydsAlgorithmG(Px,Py,Pxd, Pyd, r,cell_mass, crs, verCellHandle, ...
-    verCellHandleAerial, res, center, sigma, detSigma, plt)
+    verCellHandleAerial, res, center, sigma, detSigma, impPtHandle)
 % LLOYDSALGORITHM runs Lloyd's algorithm on the particles at xy positions
 % (Px,Py) within the boundary polygon crs for numIterations iterations
 % showPlot = true will display the results graphically.
@@ -415,25 +415,43 @@ for j = 1:numel(cd)
                 if ~isnan(cx) 
                     Px(index) = cx;  %don't update if goal is outside the area
                     Py(index) = cy;
+                    
+                    
                    
                 end
                 
 
-                if cell_mass(aerialCell(index)) < -1/numel(Px)
-                    
-                    important_cell_index = find(max(cell_mass) == cell_mass);
-                    Px(index) = Pxd(important_cell_index(1));
-                    Py(index) = Pyd(important_cell_index(1));
-                    
-                    
-                end         
-                    
-                    %NEED TO FIX IF to go to high cell mass
-                
-                
-                
+%                 if cell_mass(aerialCell(index)) < -1/numel(Px)
+%                     
+%                     important_cell_index = find(max(cell_mass) == cell_mass);
+%                     Px(index) = Pxd(important_cell_index(1));
+%                     Py(index) = Pyd(important_cell_index(1));
+%                     
+%                     
+%                 end
+       
+                need_to_go_mask = cell_mass > 1/(numel(Px));
+             
+                imp_pt_x = sum(cell_mass(need_to_go_mask)'.*Pxd(need_to_go_mask))/sum(cell_mass(need_to_go_mask));
+                imp_pt_y = sum(cell_mass(need_to_go_mask)'.*Pyd(need_to_go_mask))/sum(cell_mass(need_to_go_mask));    
+            
+                if isnan(imp_pt_x)
+                    imp_pt_x = 0;
+                    imp_pt_y = 0;
+                end
+                cur_cell_weight = cell_mass(aerialCell(index));
+                if cur_cell_weight > 0
+                    temp_x = cx*(1 - cur_cell_weight) + (cur_cell_weight)*imp_pt_x;
+                    temp_y = cy*(1 - cur_cell_weight) + (cur_cell_weight)*imp_pt_y;
+                else
+                    temp_x = cx*(1 - abs(cur_cell_weight)) + abs(cur_cell_weight)*imp_pt_x;
+                    temp_y = cy*(1 - abs(cur_cell_weight)) + abs(cur_cell_weight)*imp_pt_y;
+                end
+                Px(index) = temp_x(1);
+                Py(index) = temp_y(1);
                 
                 set(verCellHandle(index), 'XData',v(c{i},1),'YData',v(c{i},2));
+                set(impPtHandle, 'XData', imp_pt_x, 'YData', imp_pt_y)
                 
             end
             
@@ -445,7 +463,6 @@ for j = 1:numel(cd)
     end
    
 end
-cell_mass;
 cell_cost = sum(cell_cost);
 
 end
@@ -535,7 +552,6 @@ for ij=1:length(C)
 end
 end
 
-
 function [hit] =  hitBound(x,y, crs, ep)
 max_x = max(crs(:, 1));
 min_x = min(crs(:, 1));
@@ -566,7 +582,6 @@ exponent = ((x-xc).^2/(sigma(1,1)) + (y-yc).^2/sigma(2,2))./(2);
 amplitude = 1 / (sqrt(detSigma) * 2*pi);
 val = sum(amplitude  .* exp(-exponent));
 end
-
 
 function [Px, Py, cell_mass] = lloydsAlgorithmQ2(Px,Py,Pxr, Pyr, crs, verCellHandle, res, center, sigma, detSigma)
 % LLOYDSALGORITHM runs Lloyd's algorithm on the particles at xy positions
@@ -643,7 +658,7 @@ for i = 1:numel(c) %calculate the center of mass of each cell
     
     total_robot_mass = numel(aerialCell(aerialCell == i))/numel(Pyr);
     cell_mass(i) = -total_robot_mass + total_field_mass;
- 
+   
     positionMassSumX = positionMassSumX/(totalMass);
     positionMassSumY = positionMassSumY/(totalMass);
     cx = positionMassSumX;
@@ -656,7 +671,8 @@ for i = 1:numel(c) %calculate the center of mass of each cell
     end
 end
 
-
+%% NEW CHANGE IN COST
+%cell_mass(cell_mass < 0) = 0;
 
 for i = 1:numel(c) % update Voronoi cells
     set(verCellHandle(i), 'XData',v(c{i},1),'YData',v(c{i},2));
